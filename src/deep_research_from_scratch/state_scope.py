@@ -13,8 +13,6 @@ from langgraph.graph import MessagesState
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
 
-# ===== STATE DEFINITIONS =====
-
 class AgentInputState(MessagesState):
     """Input state for the full agent - only contains messages from user input."""
     pass
@@ -38,8 +36,6 @@ class AgentState(MessagesState):
     notes: Annotated[list[str], operator.add] = []
     # Final formatted research report
     final_report: str
-
-# ===== STRUCTURED OUTPUT SCHEMAS =====
 
 class ClarifyWithUser(BaseModel):
     """Schema for user clarification decision and questions."""
