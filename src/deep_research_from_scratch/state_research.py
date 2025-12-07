@@ -12,8 +12,6 @@ from pydantic import BaseModel, Field
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
-# ===== STATE DEFINITIONS =====
-
 class ResearcherState(TypedDict):
     """
     State for the research agent containing message history and research metadata.
@@ -38,8 +36,6 @@ class ResearcherOutputState(TypedDict):
     compressed_research: str
     raw_notes: Annotated[List[str], operator.add]
     researcher_messages: Annotated[Sequence[BaseMessage], add_messages]
-
-# ===== STRUCTURED OUTPUT SCHEMAS =====
 
 class ClarifyWithUser(BaseModel):
     """Schema for user clarification decisions during scoping phase."""

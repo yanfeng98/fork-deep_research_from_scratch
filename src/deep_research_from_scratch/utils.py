@@ -5,6 +5,7 @@ This module provides search and content processing utilities for the research ag
 including web search capabilities and content summarization tools.
 """
 
+import os
 from pathlib import Path
 from datetime import datetime
 from typing_extensions import Annotated, List, Literal
@@ -17,8 +18,6 @@ from tavily import TavilyClient
 
 from deep_research_from_scratch.state_research import Summary
 from deep_research_from_scratch.prompts import summarize_webpage_prompt
-
-# ===== UTILITY FUNCTIONS =====
 
 def get_today_str() -> str:
     """Get current date in a human-readable format."""
@@ -37,12 +36,13 @@ def get_current_dir() -> Path:
     except NameError:  # __file__ is not defined
         return Path.cwd()
 
-# ===== CONFIGURATION =====
-
-summarization_model = init_chat_model(model="openai:gpt-4.1-mini")
+summarization_model = init_chat_model(
+    model="openai:deepseek-v3-1-terminus",
+    temperature=0.0,
+    base_url=os.environ.get("OPENAI_BASE_URL"),
+    api_key=os.environ.get("OPENAI_API_KEY"),
+)
 tavily_client = TavilyClient()
-
-# ===== SEARCH FUNCTIONS =====
 
 def tavily_search_multiple(
     search_queries: List[str], 
@@ -62,7 +62,6 @@ def tavily_search_multiple(
         List of search result dictionaries
     """
 
-    # Execute searches sequentially. Note: yon can use AsyncTavilyClient to parallelize this step.
     search_docs = []
     for query in search_queries:
         result = tavily_client.search(
@@ -85,10 +84,7 @@ def summarize_webpage_content(webpage_content: str) -> str:
         Formatted summary with key excerpts
     """
     try:
-        # Set up structured output model for summarization
         structured_model = summarization_model.with_structured_output(Summary)
-
-        # Generate summary
         summary = structured_model.invoke([
             HumanMessage(content=summarize_webpage_prompt.format(
                 webpage_content=webpage_content, 
@@ -96,7 +92,6 @@ def summarize_webpage_content(webpage_content: str) -> str:
             ))
         ])
 
-        # Format summary with clear structure
         formatted_summary = (
             f"<summary>\n{summary.summary}\n</summary>\n\n"
             f"<key_excerpts>\n{summary.key_excerpts}\n</key_excerpts>"
@@ -139,11 +134,9 @@ def process_search_results(unique_results: dict) -> dict:
     summarized_results = {}
 
     for url, result in unique_results.items():
-        # Use existing content if no raw content for summarization
         if not result.get("raw_content"):
             content = result['content']
         else:
-            # Summarize raw content for better processing
             content = summarize_webpage_content(result['raw_content'])
 
         summarized_results[url] = {
@@ -175,8 +168,6 @@ def format_search_output(summarized_results: dict) -> str:
 
     return formatted_output
 
-# ===== RESEARCH TOOLS =====
-
 @tool(parse_docstring=True)
 def tavily_search(
     query: str,
@@ -193,21 +184,14 @@ def tavily_search(
     Returns:
         Formatted string of search results with summaries
     """
-    # Execute search for single query
     search_results = tavily_search_multiple(
-        [query],  # Convert single query to list for the internal function
+        [query],
         max_results=max_results,
         topic=topic,
         include_raw_content=True,
     )
-
-    # Deduplicate results by URL to avoid processing duplicate content
     unique_results = deduplicate_search_results(search_results)
-
-    # Process results with summarization
     summarized_results = process_search_results(unique_results)
-
-    # Format output for consumption
     return format_search_output(summarized_results)
 
 @tool(parse_docstring=True)
