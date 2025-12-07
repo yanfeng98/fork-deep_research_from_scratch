@@ -27,22 +27,18 @@ from deep_research_from_scratch.prompts import research_agent_prompt_with_mcp, c
 from deep_research_from_scratch.state_research import ResearcherState, ResearcherOutputState
 from deep_research_from_scratch.utils import get_today_str, think_tool, get_current_dir
 
-# ===== CONFIGURATION =====
-
-# MCP server configuration for filesystem access
 mcp_config = {
     "filesystem": {
         "command": "npx",
         "args": [
-            "-y",  # Auto-install if needed
+            "-y",
             "@modelcontextprotocol/server-filesystem",
-            str(get_current_dir() / "files")  # Path to research documents
+            str(get_current_dir() / "files")
         ],
-        "transport": "stdio"  # Communication via stdin/stdout
+        "transport": "stdio"
     }
 }
 
-# Global client variable - will be initialized lazily
 _client = None
 
 def get_mcp_client():
@@ -52,11 +48,19 @@ def get_mcp_client():
         _client = MultiServerMCPClient(mcp_config)
     return _client
 
-# Initialize models
-compress_model = init_chat_model(model="openai:gpt-4.1", max_tokens=32000)
-model = init_chat_model(model="anthropic:claude-sonnet-4-20250514")
-
-# ===== AGENT NODES =====
+compress_model = init_chat_model(
+    model="openai:deepseek-v3-1-terminus",
+    temperature=0.0,
+    max_tokens=32000,
+    base_url=os.environ.get("OPENAI_BASE_URL"),
+    api_key=os.environ.get("OPENAI_API_KEY"),
+)
+model = init_chat_model(
+    model="openai:deepseek-v3-1-terminus",
+    temperature=0.0,
+    base_url=os.environ.get("OPENAI_BASE_URL"),
+    api_key=os.environ.get("OPENAI_API_KEY"),
+)
 
 async def llm_call(state: ResearcherState):
     """Analyze current state and decide on tool usage with MCP integration.
@@ -68,17 +72,12 @@ async def llm_call(state: ResearcherState):
 
     Returns updated state with model response.
     """
-    # Get available tools from MCP server
     client = get_mcp_client()
     mcp_tools = await client.get_tools()
 
-    # Use MCP tools for local document access
     tools = mcp_tools + [think_tool]
-
-    # Initialize model with tool binding
     model_with_tools = model.bind_tools(tools)
 
-    # Process user input with system prompt
     return {
         "researcher_messages": [
             model_with_tools.invoke(
@@ -102,25 +101,20 @@ async def tool_node(state: ResearcherState):
 
     async def execute_tools():
         """Execute all tool calls. MCP tools require async execution."""
-        # Get fresh tool references from MCP server
         client = get_mcp_client()
         mcp_tools = await client.get_tools()
         tools = mcp_tools + [think_tool]
         tools_by_name = {tool.name: tool for tool in tools}
 
-        # Execute tool calls (sequentially for reliability)
         observations = []
         for tool_call in tool_calls:
             tool = tools_by_name[tool_call["name"]]
             if tool_call["name"] == "think_tool":
-                # think_tool is sync, use regular invoke
                 observation = tool.invoke(tool_call["args"])
             else:
-                # MCP tools are async, use ainvoke
                 observation = await tool.ainvoke(tool_call["args"])
             observations.append(observation)
 
-        # Format results as tool messages
         tool_outputs = [
             ToolMessage(
                 content=observation,
@@ -151,7 +145,6 @@ def compress_research(state: ResearcherState) -> dict:
 
     response = compress_model.invoke(messages)
 
-    # Extract raw notes from tool and AI messages
     raw_notes = [
         str(m.content) for m in filter_messages(
             state["researcher_messages"], 
@@ -164,8 +157,6 @@ def compress_research(state: ResearcherState) -> dict:
         "raw_notes": ["\n".join(raw_notes)]
     }
 
-# ===== ROUTING LOGIC =====
-
 def should_continue(state: ResearcherState) -> Literal["tool_node", "compress_research"]:
     """Determine whether to continue with tool execution or compress research.
 
@@ -175,34 +166,26 @@ def should_continue(state: ResearcherState) -> Literal["tool_node", "compress_re
     messages = state["researcher_messages"]
     last_message = messages[-1]
 
-    # Continue to tool execution if tools were called
     if last_message.tool_calls:
         return "tool_node"
-    # Otherwise, compress research findings
     return "compress_research"
 
-# ===== GRAPH CONSTRUCTION =====
-
-# Build the agent workflow
 agent_builder_mcp = StateGraph(ResearcherState, output_schema=ResearcherOutputState)
 
-# Add nodes to the graph
 agent_builder_mcp.add_node("llm_call", llm_call)
 agent_builder_mcp.add_node("tool_node", tool_node)
 agent_builder_mcp.add_node("compress_research", compress_research)
 
-# Add edges to connect nodes
 agent_builder_mcp.add_edge(START, "llm_call")
 agent_builder_mcp.add_conditional_edges(
     "llm_call",
     should_continue,
     {
-        "tool_node": "tool_node",        # Continue to tool execution
-        "compress_research": "compress_research",  # Compress research findings
+        "tool_node": "tool_node",
+        "compress_research": "compress_research",
     },
 )
-agent_builder_mcp.add_edge("tool_node", "llm_call")  # Loop back for more processing
+agent_builder_mcp.add_edge("tool_node", "llm_call")
 agent_builder_mcp.add_edge("compress_research", END)
 
-# Compile the agent
 agent_mcp = agent_builder_mcp.compile()
