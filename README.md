@@ -50,8 +50,8 @@ Add your API keys to the `.env` file:
 TAVILY_API_KEY=your_tavily_api_key_here
 
 # Required for model usage
+OPENAI_BASE_URL=your_openai_base_url_here
 OPENAI_API_KEY=your_openai_api_key_here
-ANTHROPIC_API_KEY=your_anthropic_api_key_here
 ```
 
 4. Run notebooks or code using uv:
