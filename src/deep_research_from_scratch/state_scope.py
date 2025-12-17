@@ -6,7 +6,7 @@ the research agent scoping workflow, including researcher state management and o
 """
 
 import operator
-from typing_extensions import Optional, Annotated, List, Sequence
+from typing_extensions import Optional, Annotated, Sequence
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph import MessagesState
@@ -26,15 +26,10 @@ class AgentState(MessagesState):
     state management between subgraphs and the main workflow.
     """
 
-    # Research brief generated from user conversation history
     research_brief: Optional[str]
-    # Messages exchanged with the supervisor agent for coordination
     supervisor_messages: Annotated[Sequence[BaseMessage], add_messages]
-    # Raw unprocessed research notes collected during the research phase
     raw_notes: Annotated[list[str], operator.add] = []
-    # Processed and structured notes ready for report generation
     notes: Annotated[list[str], operator.add] = []
-    # Final formatted research report
     final_report: str
 
 class ClarifyWithUser(BaseModel):

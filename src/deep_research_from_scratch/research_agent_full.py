@@ -13,7 +13,7 @@ input through final report delivery.
 """
 
 import os
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, AIMessage
 from langgraph.graph import StateGraph, START, END
 
 from deep_research_from_scratch.utils import get_today_str
@@ -39,17 +39,16 @@ async def final_report_generation(state: AgentState):
     Synthesizes all research findings into a comprehensive final report
     """
 
-    notes = state.get("notes", [])
+    notes: list[str] = state.get("notes", [])
+    findings: str = "\n".join(notes)
 
-    findings = "\n".join(notes)
-
-    final_report_prompt = final_report_generation_prompt.format(
+    final_report_prompt: str = final_report_generation_prompt.format(
         research_brief=state.get("research_brief", ""),
         findings=findings,
         date=get_today_str()
     )
 
-    final_report = await writer_model.ainvoke([HumanMessage(content=final_report_prompt)])
+    final_report: AIMessage = await writer_model.ainvoke([HumanMessage(content=final_report_prompt)])
 
     return {
         "final_report": final_report.content, 
