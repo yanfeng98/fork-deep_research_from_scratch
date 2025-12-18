@@ -6,7 +6,6 @@ and synthesis to answer complex research questions.
 """
 
 import os
-from pydantic import BaseModel, Field
 from typing_extensions import Literal
 
 from langgraph.graph import StateGraph, START, END

@@ -8,11 +8,10 @@ including web search capabilities and content summarization tools.
 import os
 from pathlib import Path
 from datetime import datetime
-from typing_extensions import Annotated, List, Literal
+from typing_extensions import Annotated, Literal
 
 from langchain.chat_models import init_chat_model 
 from langchain_core.messages import HumanMessage
-from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool, InjectedToolArg
 from tavily import TavilyClient
 
@@ -44,130 +43,6 @@ summarization_model = init_chat_model(
 )
 tavily_client = TavilyClient()
 
-def tavily_search_multiple(
-    search_queries: List[str], 
-    max_results: int = 3, 
-    topic: Literal["general", "news", "finance"] = "general", 
-    include_raw_content: bool = True, 
-) -> List[dict]:
-    """Perform search using Tavily API for multiple queries.
-
-    Args:
-        search_queries: List of search queries to execute
-        max_results: Maximum number of results per query
-        topic: Topic filter for search results
-        include_raw_content: Whether to include raw webpage content
-
-    Returns:
-        List of search result dictionaries
-    """
-
-    search_docs = []
-    for query in search_queries:
-        result = tavily_client.search(
-            query,
-            max_results=max_results,
-            include_raw_content=include_raw_content,
-            topic=topic
-        )
-        search_docs.append(result)
-
-    return search_docs
-
-def summarize_webpage_content(webpage_content: str) -> str:
-    """Summarize webpage content using the configured summarization model.
-
-    Args:
-        webpage_content: Raw webpage content to summarize
-
-    Returns:
-        Formatted summary with key excerpts
-    """
-    try:
-        structured_model = summarization_model.with_structured_output(Summary)
-        summary = structured_model.invoke([
-            HumanMessage(content=summarize_webpage_prompt.format(
-                webpage_content=webpage_content, 
-                date=get_today_str()
-            ))
-        ])
-
-        formatted_summary = (
-            f"<summary>\n{summary.summary}\n</summary>\n\n"
-            f"<key_excerpts>\n{summary.key_excerpts}\n</key_excerpts>"
-        )
-
-        return formatted_summary
-
-    except Exception as e:
-        print(f"Failed to summarize webpage: {str(e)}")
-        return webpage_content[:1000] + "..." if len(webpage_content) > 1000 else webpage_content
-
-def deduplicate_search_results(search_results: List[dict]) -> dict:
-    """Deduplicate search results by URL to avoid processing duplicate content.
-
-    Args:
-        search_results: List of search result dictionaries
-
-    Returns:
-        Dictionary mapping URLs to unique results
-    """
-    unique_results = {}
-
-    for response in search_results:
-        for result in response['results']:
-            url = result['url']
-            if url not in unique_results:
-                unique_results[url] = result
-
-    return unique_results
-
-def process_search_results(unique_results: dict) -> dict:
-    """Process search results by summarizing content where available.
-
-    Args:
-        unique_results: Dictionary of unique search results
-
-    Returns:
-        Dictionary of processed results with summaries
-    """
-    summarized_results = {}
-
-    for url, result in unique_results.items():
-        if not result.get("raw_content"):
-            content = result['content']
-        else:
-            content = summarize_webpage_content(result['raw_content'])
-
-        summarized_results[url] = {
-            'title': result['title'],
-            'content': content
-        }
-
-    return summarized_results
-
-def format_search_output(summarized_results: dict) -> str:
-    """Format search results into a well-structured string output.
-
-    Args:
-        summarized_results: Dictionary of processed search results
-
-    Returns:
-        Formatted string of search results with clear source separation
-    """
-    if not summarized_results:
-        return "No valid search results found. Please try different search queries or use a different search API."
-
-    formatted_output = "Search results: \n\n"
-
-    for i, (url, result) in enumerate(summarized_results.items(), 1):
-        formatted_output += f"\n\n--- SOURCE {i}: {result['title']} ---\n"
-        formatted_output += f"URL: {url}\n\n"
-        formatted_output += f"SUMMARY:\n{result['content']}\n\n"
-        formatted_output += "-" * 80 + "\n"
-
-    return formatted_output
-
 @tool(parse_docstring=True)
 def tavily_search(
     query: str,
@@ -184,15 +59,139 @@ def tavily_search(
     Returns:
         Formatted string of search results with summaries
     """
-    search_results = tavily_search_multiple(
+    search_results: list[dict] = tavily_search_multiple(
         [query],
         max_results=max_results,
         topic=topic,
         include_raw_content=True,
     )
-    unique_results = deduplicate_search_results(search_results)
-    summarized_results = process_search_results(unique_results)
+    unique_results: dict = deduplicate_search_results(search_results)
+    summarized_results: dict[str, dict[str, str]] = process_search_results(unique_results)
     return format_search_output(summarized_results)
+
+def tavily_search_multiple(
+    search_queries: list[str], 
+    max_results: int = 3, 
+    topic: Literal["general", "news", "finance"] = "general", 
+    include_raw_content: bool = True, 
+) -> list[dict]:
+    """Perform search using Tavily API for multiple queries.
+
+    Args:
+        search_queries: List of search queries to execute
+        max_results: Maximum number of results per query
+        topic: Topic filter for search results
+        include_raw_content: Whether to include raw webpage content
+
+    Returns:
+        List of search result dictionaries
+    """
+
+    search_docs: list[dict] = []
+    for query in search_queries:
+        result: dict = tavily_client.search(
+            query,
+            max_results=max_results,
+            include_raw_content=include_raw_content,
+            topic=topic
+        )
+        search_docs.append(result)
+
+    return search_docs
+
+def deduplicate_search_results(search_results: list[dict]) -> dict:
+    """Deduplicate search results by URL to avoid processing duplicate content.
+
+    Args:
+        search_results: List of search result dictionaries
+
+    Returns:
+        Dictionary mapping URLs to unique results
+    """
+    unique_results: dict = {}
+
+    for response in search_results:
+        for result in response['results']:
+            url: str = result['url']
+            if url not in unique_results:
+                unique_results[url] = result
+
+    return unique_results
+
+def process_search_results(unique_results: dict) -> dict[str, dict[str, str]]:
+    """Process search results by summarizing content where available.
+
+    Args:
+        unique_results: Dictionary of unique search results
+
+    Returns:
+        Dictionary of processed results with summaries
+    """
+    summarized_results: dict[str, dict[str, str]] = {}
+
+    for url, result in unique_results.items():
+        if not result.get("raw_content"):
+            content: str = result['content']
+        else:
+            content: str = summarize_webpage_content(result['raw_content'])
+
+        summarized_results[url] = {
+            'title': result['title'],
+            'content': content
+        }
+
+    return summarized_results
+
+def summarize_webpage_content(webpage_content: str) -> str:
+    """Summarize webpage content using the configured summarization model.
+
+    Args:
+        webpage_content: Raw webpage content to summarize
+
+    Returns:
+        Formatted summary with key excerpts
+    """
+    try:
+        structured_model = summarization_model.with_structured_output(Summary)
+        summary: Summary = structured_model.invoke([
+            HumanMessage(content=summarize_webpage_prompt.format(
+                webpage_content=webpage_content, 
+                date=get_today_str()
+            ))
+        ])
+
+        formatted_summary: str = (
+            f"<summary>\n{summary.summary}\n</summary>\n\n"
+            f"<key_excerpts>\n{summary.key_excerpts}\n</key_excerpts>"
+        )
+
+        return formatted_summary
+
+    except Exception as e:
+        print(f"Failed to summarize webpage: {str(e)}")
+        return webpage_content[:1000] + "..." if len(webpage_content) > 1000 else webpage_content
+
+def format_search_output(summarized_results: dict[str, dict[str, str]]) -> str:
+    """Format search results into a well-structured string output.
+
+    Args:
+        summarized_results: Dictionary of processed search results
+
+    Returns:
+        Formatted string of search results with clear source separation
+    """
+    if not summarized_results:
+        return "No valid search results found. Please try different search queries or use a different search API."
+
+    formatted_output: str = "Search results: \n\n"
+
+    for i, (url, result) in enumerate(summarized_results.items(), 1):
+        formatted_output += f"\n\n--- SOURCE {i}: {result['title']} ---\n"
+        formatted_output += f"URL: {url}\n\n"
+        formatted_output += f"SUMMARY:\n{result['content']}\n\n"
+        formatted_output += "-" * 80 + "\n"
+
+    return formatted_output
 
 @tool(parse_docstring=True)
 def think_tool(reflection: str) -> str:
